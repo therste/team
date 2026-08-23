@@ -26,7 +26,7 @@ from keyboards import (
 
 BOT_TOKEN = "8327945346:AAFg9b4Q4J9pxU-Ux1CRdZX8yedBTDEF1ro"
 ADMIN_ID = 8722020478
-GROUP_ID = -1004318159149
+GROUP_ID = -1005517356130
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
@@ -631,7 +631,7 @@ async def handle_decline(callback: CallbackQuery):
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("check_status"))
 async def handle_check_status(callback: CallbackQuery):
-    await callback.answer("Функция проверки статуса пока не работает.", show_alert=True)
+    await callback.answer("На проверке...", show_alert=True)
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("main_menu"))
 async def handle_main_menu(callback: CallbackQuery):

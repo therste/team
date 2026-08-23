@@ -61,30 +61,65 @@ def get_accepted_keyboard() -> InlineKeyboardMarkup:
 
 def get_main_menu_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(PremiumButton(
-        text="Мой профиль", 
-        emoji_id="6037083366438737901", 
-        callback_data="profile", 
-        style="danger"
-    ))
-    builder.row(PremiumButton(
-        text="Выплата", 
-        emoji_id="5904359114531675993", 
-        callback_data="payout", 
-        style="danger"
-    ))
-    builder.row(PremiumButton(
-        text="Реф 10%", 
-        emoji_id="6028171274939797252", 
-        callback_data="traffic", 
-        style="danger"
-    ))
-    builder.row(PremiumButton(
-        text="Парсер", 
-        emoji_id="6030400221232501136", 
-        url="https://t.me/vabupa", 
-        style="danger"
-    ))
+    
+    # Первый ряд: Профиль | Заявка на выплату
+    builder.row(
+        PremiumButton(
+            text="Профиль", 
+            emoji_id="6037083366438737901", 
+            callback_data="profile", 
+            style="danger"
+        ),
+        PremiumButton(
+            text="Заявка на выплату", 
+            emoji_id="5904359114531675993", 
+            callback_data="payout", 
+            style="danger"
+        )
+    )
+    
+    # Второй ряд: Рефка 10% | Парсер
+    builder.row(
+        PremiumButton(
+            text="Рефка 10%", 
+            emoji_id="6028171274939797252", 
+            callback_data="traffic", 
+            style="danger"
+        ),
+        PremiumButton(
+            text="Парсер", 
+            emoji_id="6030400221232501136", 
+            url="https://t.me/vabupa", 
+            style="danger"
+        )
+    )
+    
+    # Третий ряд: Чат | Боты
+    builder.row(
+        PremiumButton(
+            text="Чат", 
+            emoji_id="6041716699848249286",
+            url="https://t.me/+zApO7O3oEpJkMjQx", 
+            style="danger"
+        ),
+        PremiumButton(
+            text="Боты", 
+            emoji_id="6041716699848249286",
+            url="https://t.me/otcforjob", 
+            style="danger"
+        )
+    )
+    
+    # Четвёртый ряд: Связаться с владельцем
+    builder.row(
+        PremiumButton(
+            text="Связаться с владельцем", 
+            emoji_id="6041716699848249286",
+            url="https://t.me/vabupa", 
+            style="danger"
+        )
+    )
+    
     return builder.as_markup()
 
 def get_profile_keyboard() -> InlineKeyboardMarkup:
