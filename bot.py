@@ -26,7 +26,7 @@ from keyboards import (
 
 BOT_TOKEN = "8327945346:AAFg9b4Q4J9pxU-Ux1CRdZX8yedBTDEF1ro"
 ADMIN_ID = 8722020478
-GROUP_ID = -1005517356130
+GROUP_ID = -1004318159149
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
@@ -38,6 +38,7 @@ COUNTER_FILE = "counter.json"
 PAYOUT_FILE = "payout_counter.json"
 TON_ADDRESSES_FILE = "ton_addresses.json"
 HISTORY_FILE = "history.json"
+APPROVED_FILE = "approved_users.json"
 
 user_questions = {}
 user_answers = {}
@@ -48,9 +49,10 @@ user_links = {}
 user_ton_addresses = {}
 user_history = {}
 user_payout_messages = {}
+approved_users = set()
 
 def load_data():
-    global application_counter, user_data, user_links, payout_counter, user_ton_addresses, user_history
+    global application_counter, user_data, user_links, payout_counter, user_ton_addresses, user_history, approved_users
     
     if os.path.exists(COUNTER_FILE):
         with open(COUNTER_FILE, 'r', encoding='utf-8') as f:
@@ -80,6 +82,10 @@ def load_data():
     if os.path.exists(HISTORY_FILE):
         with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
             user_history = json.load(f)
+    
+    if os.path.exists(APPROVED_FILE):
+        with open(APPROVED_FILE, 'r', encoding='utf-8') as f:
+            approved_users = set(json.load(f))
 
 def save_data():
     with open(COUNTER_FILE, 'w', encoding='utf-8') as f:
@@ -105,16 +111,27 @@ def save_data():
     
     with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
         json.dump(user_history, f, ensure_ascii=False, indent=2)
+    
+    with open(APPROVED_FILE, 'w', encoding='utf-8') as f:
+        json.dump(list(approved_users), f, ensure_ascii=False, indent=2)
 
 load_data()
 
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
+    user_id = str(message.from_user.id)
+    
+    # Проверяем, одобрен ли пользователь
+    if user_id in approved_users:
+        text = (f'<tg-emoji emoji-id="5938537205847822613">👋</tg-emoji> <b>Добро пожаловать в MMM Team.</b>\n\nЗдесь вы сможете подать заявку на выплату или стать траффером тимы.')
+        await message.answer(text, reply_markup=get_main_menu_keyboard(), parse_mode=ParseMode.HTML)
+        return
+    
     try:
         member = await bot.get_chat_member(GROUP_ID, message.from_user.id)
         if member.status in ['member', 'administrator', 'creator']:
-            if str(message.from_user.id) not in user_data:
-                user_data[str(message.from_user.id)] = {
+            if user_id not in user_data:
+                user_data[user_id] = {
                     "join_date": datetime.now(),
                     "profits": 0,
                     "sum_profits": 0,
@@ -252,8 +269,16 @@ async def handle_chat_member(event: ChatMemberUpdated):
 async def process_success(callback: CallbackQuery):
     await callback.answer()
     await callback.message.delete()
-    user_questions[str(callback.from_user.id)] = 1
-    user_answers[str(callback.from_user.id)] = {}
+    user_id = str(callback.from_user.id)
+    
+    # Проверяем, не одобрен ли уже пользователь
+    if user_id in approved_users:
+        text = (f'<tg-emoji emoji-id="5938537205847822613">👋</tg-emoji> <b>Вы уже в команде!</b>')
+        await callback.message.answer(text, reply_markup=get_main_menu_keyboard(), parse_mode=ParseMode.HTML)
+        return
+    
+    user_questions[user_id] = 1
+    user_answers[user_id] = {}
     text = (f'<tg-emoji emoji-id="5794182096603847292">❓</tg-emoji> <b>Вопрос 1.</b>\n\nСколько времени ты готов уделять нашей команде?')
     await callback.message.answer(text, parse_mode=ParseMode.HTML)
 
@@ -265,6 +290,12 @@ async def process_danger(callback: CallbackQuery):
 @dp.message(lambda message: (message.photo or message.document) and str(message.from_user.id) in user_questions and user_questions[str(message.from_user.id)] == 'payout_screenshots')
 async def handle_payout_screenshot(message: Message):
     user_id = str(message.from_user.id)
+    
+    if user_id not in user_answers:
+        user_answers[user_id] = {}
+    
+    if 'screenshots' not in user_answers[user_id]:
+        user_answers[user_id]['screenshots'] = []
     
     if len(user_answers[user_id].get('screenshots', [])) >= 10:
         await message.answer("❌ Вы уже загрузили максимальное количество скринов (10). Нажмите 'Далее' для продолжения.")
@@ -319,14 +350,23 @@ async def handle_payout_ton(message: Message):
 async def handle_answers(message: Message):
     user_id = str(message.from_user.id)
     
-    if user_id in user_questions and user_questions[user_id] == 'ton_name':
+    # Если пользователь не в процессе заполнения заявки - игнорируем
+    if user_id not in user_questions:
+        return
+    
+    # Если это команда - игнорируем
+    if message.text and message.text.startswith('/'):
+        return
+    
+    # Обработка TON адреса
+    if user_questions[user_id] == 'ton_name':
         user_answers[user_id]['ton_name'] = message.text
         user_questions[user_id] = 'ton_address_input'
         text = (f'<tg-emoji emoji-id="6041720006973067267">💳</tg-emoji> <b>Введите адрес</b>')
         await message.answer(text, parse_mode=ParseMode.HTML)
         return
     
-    if user_id in user_questions and user_questions[user_id] == 'ton_address_input':
+    if user_questions[user_id] == 'ton_address_input':
         if user_id not in user_ton_addresses:
             user_ton_addresses[user_id] = {}
         name = user_answers[user_id].get('ton_name', 'Без названия')
@@ -337,16 +377,12 @@ async def handle_answers(message: Message):
         await message.answer(text, reply_markup=get_profile_keyboard(), parse_mode=ParseMode.HTML)
         return
     
-    if user_id in user_questions and user_questions[user_id] in ['payout_deal', 'payout_links']:
+    # Обработка заявки на выплату
+    if user_questions[user_id] in ['payout_deal', 'payout_links']:
         await handle_payout_answers(message)
         return
     
-    if user_id not in user_questions:
-        return
-    
-    if message.text and message.text.startswith('/'):
-        return
-    
+    # Обработка вопросов для вступления
     if user_questions[user_id] == 1:
         user_answers[user_id]['time'] = message.text
         user_questions[user_id] = 2
@@ -572,6 +608,9 @@ async def handle_accept(callback: CallbackQuery):
     app_number = parts[3]
     
     await callback.message.delete()
+    
+    # Добавляем пользователя в список одобренных
+    approved_users.add(user_id)
     
     if user_id in user_history:
         for item in user_history[user_id]:
