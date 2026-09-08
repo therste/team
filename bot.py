@@ -24,9 +24,9 @@ from keyboards import (
     get_ton_address_list_keyboard
 )
 
-BOT_TOKEN = "8327945346:AAFg9b4Q4J9pxU-Ux1CRdZX8yedBTDEF1ro"
-ADMIN_ID = 8722020478
-GROUP_ID = -1004318159149
+BOT_TOKEN = "8327945346:AAEXp_BmRBFNcFL1SkRSUqaMZwaB_WNUyXA"
+ADMIN_ID = 922986659
+GROUP_ID = -1004475913996
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
