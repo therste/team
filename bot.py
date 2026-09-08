@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, ChatMemberUpdated
+from aiogram.types import Message, CallbackQuery, ChatMemberUpdated, FSInputFile
 from aiogram.enums import ParseMode
 from keyboards import (
     get_start_keyboard, 
@@ -24,9 +24,9 @@ from keyboards import (
     get_ton_address_list_keyboard
 )
 
-BOT_TOKEN = "8327945346:AAFg9b4Q4J9pxU-Ux1CRdZX8yedBTDEF1ro"
-ADMIN_ID = 8722020478
-GROUP_ID = -1004318159149
+BOT_TOKEN = "8327945346:AAEXp_BmRBFNcFL1SkRSUqaMZwaB_WNUyXA"
+ADMIN_ID = 922986659
+GROUP_ID = -1004475913996
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
@@ -611,6 +611,7 @@ async def handle_accept(callback: CallbackQuery):
     
     # Добавляем пользователя в список одобренных
     approved_users.add(user_id)
+    save_data()
     
     if user_id in user_history:
         for item in user_history[user_id]:
@@ -630,11 +631,24 @@ async def handle_accept(callback: CallbackQuery):
         }
         save_data()
     
-    text = (
-        f'<tg-emoji emoji-id="6030445631921721471">✅</tg-emoji> <b>Заявка #{app_number} одобрена.</b>\n\n'
-        f'Наша команда: https://t.me/+NGKWxK04XeVmMDgx'
-    )
-    await bot.send_message(int(user_id), text, reply_markup=get_accepted_keyboard(), parse_mode=ParseMode.HTML)
+    # Отправляем приветственное изображение
+    try:
+        welcome_image = FSInputFile("welcome.png")
+        await bot.send_photo(
+            int(user_id),
+            photo=welcome_image,
+            caption=f'<tg-emoji emoji-id="6030445631921721471">✅</tg-emoji> <b>Заявка #{app_number} одобрена.</b>\n\nНаша команда: https://t.me/+NGKWxK04XeVmMDgx',
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_accepted_keyboard()
+        )
+    except Exception as e:
+        logging.error(f"Error sending welcome image: {e}")
+        # Если изображение не найдено, отправляем обычное сообщение
+        text = (
+            f'<tg-emoji emoji-id="6030445631921721471">✅</tg-emoji> <b>Заявка #{app_number} одобрена.</b>\n\n'
+            f'Наша команда: https://t.me/+NGKWxK04XeVmMDgx'
+        )
+        await bot.send_message(int(user_id), text, reply_markup=get_accepted_keyboard(), parse_mode=ParseMode.HTML)
     
     if user_id in user_answers:
         del user_answers[user_id]
@@ -675,6 +689,15 @@ async def handle_check_status(callback: CallbackQuery):
 @dp.callback_query(lambda c: c.data and c.data.startswith("main_menu"))
 async def handle_main_menu(callback: CallbackQuery):
     await callback.answer()
+    user_id = str(callback.from_user.id)
+    
+    # Проверяем, одобрен ли пользователь
+    if user_id not in approved_users:
+        # Если не одобрен, отправляем анкету
+        text = (f'<tg-emoji emoji-id="5927118708873892465">👋</tg-emoji> <b>Добро пожаловать в панель тимы MMM.</b>\n\nДля принятия заявки в тиму, я попрошу тебя ответить на пару вопросов.')
+        await callback.message.answer(text, reply_markup=get_start_keyboard(), parse_mode=ParseMode.HTML)
+        return
+    
     text = (f'<tg-emoji emoji-id="5938537205847822613">👋</tg-emoji> <b>Добро пожаловать в MMM Team.</b>\n\nЗдесь вы сможете подать заявку на выплату или стать траффером тимы.')
     await callback.message.answer(text, reply_markup=get_main_menu_keyboard(), parse_mode=ParseMode.HTML)
 
@@ -780,8 +803,13 @@ async def handle_payout_start(callback: CallbackQuery):
     
     user_id = str(callback.from_user.id)
     
+    # Проверяем, одобрен ли пользователь
+    if user_id not in approved_users:
+        await callback.message.answer("❌ Сначала подайте заявку на вступление в команду через /start")
+        return
+    
     if user_id not in user_data:
-        await callback.message.answer("Сначала подайте заявку на вступление в команду через /start")
+        await callback.message.answer("❌ Сначала подайте заявку на вступление в команду через /start")
         return
     
     user_questions[user_id] = 'payout_deal'
@@ -796,6 +824,12 @@ async def handle_traffic(callback: CallbackQuery):
     await callback.answer()
     
     user_id = str(callback.from_user.id)
+    
+    # Проверяем, одобрен ли пользователь
+    if user_id not in approved_users:
+        await callback.message.answer("❌ Сначала подайте заявку на вступление в команду через /start")
+        return
+    
     data = user_data.get(user_id, {
         "invites": 0,
         "leaves": 0
@@ -823,6 +857,11 @@ async def handle_get_link(callback: CallbackQuery):
     await callback.answer()
     
     user_id = str(callback.from_user.id)
+    
+    # Проверяем, одобрен ли пользователь
+    if user_id not in approved_users:
+        await callback.message.answer("❌ Сначала подайте заявку на вступление в команду через /start")
+        return
     
     try:
         invite_link = await bot.create_chat_invite_link(
