@@ -24,9 +24,9 @@ from keyboards import (
     get_ton_address_list_keyboard
 )
 
-BOT_TOKEN = "8327945346:AAEXp_BmRBFNcFL1SkRSUqaMZwaB_WNUyXA"
-ADMIN_ID = 922986659
-GROUP_ID = -1004475913996
+BOT_TOKEN = "8327945346:AAFg9b4Q4J9pxU-Ux1CRdZX8yedBTDEF1ro"
+ADMIN_ID = 8722020478
+GROUP_ID = -1004318159149
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
@@ -117,6 +117,28 @@ def save_data():
 
 load_data()
 
+async def send_welcome_with_menu(chat_id: int, text: str):
+    """Отправляет приветственное изображение с меню, если файл существует"""
+    try:
+        # Проверяем, существует ли файл welcome.png
+        if os.path.exists("welcome.png"):
+            welcome_image = FSInputFile("welcome.png")
+            await bot.send_photo(
+                chat_id,
+                photo=welcome_image,
+                caption=text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_main_menu_keyboard()
+            )
+        else:
+            # Если файл не найден, отправляем просто текст
+            logging.warning("welcome.png не найден, отправляем текстовое сообщение")
+            await bot.send_message(chat_id, text, reply_markup=get_main_menu_keyboard(), parse_mode=ParseMode.HTML)
+    except Exception as e:
+        logging.error(f"Ошибка при отправке welcome.png: {e}")
+        # В случае ошибки отправляем текстовое сообщение
+        await bot.send_message(chat_id, text, reply_markup=get_main_menu_keyboard(), parse_mode=ParseMode.HTML)
+
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
     user_id = str(message.from_user.id)
@@ -124,7 +146,7 @@ async def cmd_start(message: Message):
     # Проверяем, одобрен ли пользователь
     if user_id in approved_users:
         text = (f'<tg-emoji emoji-id="5938537205847822613">👋</tg-emoji> <b>Добро пожаловать в MMM Team.</b>\n\nЗдесь вы сможете подать заявку на выплату или стать траффером тимы.')
-        await message.answer(text, reply_markup=get_main_menu_keyboard(), parse_mode=ParseMode.HTML)
+        await send_welcome_with_menu(message.chat.id, text)
         return
     
     try:
@@ -141,7 +163,7 @@ async def cmd_start(message: Message):
                 }
                 save_data()
             text = (f'<tg-emoji emoji-id="5938537205847822613">👋</tg-emoji> <b>Добро пожаловать в MMM Team.</b>\n\nЗдесь вы сможете подать заявку на выплату или стать траффером тимы.')
-            await message.answer(text, reply_markup=get_main_menu_keyboard(), parse_mode=ParseMode.HTML)
+            await send_welcome_with_menu(message.chat.id, text)
             return
     except:
         pass
@@ -274,7 +296,7 @@ async def process_success(callback: CallbackQuery):
     # Проверяем, не одобрен ли уже пользователь
     if user_id in approved_users:
         text = (f'<tg-emoji emoji-id="5938537205847822613">👋</tg-emoji> <b>Вы уже в команде!</b>')
-        await callback.message.answer(text, reply_markup=get_main_menu_keyboard(), parse_mode=ParseMode.HTML)
+        await send_welcome_with_menu(callback.message.chat.id, text)
         return
     
     user_questions[user_id] = 1
@@ -464,22 +486,26 @@ async def send_payout_to_admin(user):
         f'<tg-emoji emoji-id="5924498929147189381">📸</tg-emoji> <b>Скрины:</b> ниже'
     )
     
-    await bot.send_message(
-        ADMIN_ID,
-        text,
-        reply_markup=get_payout_admin_keyboard(user.id, payout_number),
-        parse_mode=ParseMode.HTML
-    )
-    
-    if 'screenshots' in answers:
-        for file_id in answers['screenshots']:
-            try:
-                await bot.send_document(ADMIN_ID, file_id)
-            except:
+    # Отправляем админу с обработкой ошибок
+    try:
+        await bot.send_message(
+            ADMIN_ID,
+            text,
+            reply_markup=get_payout_admin_keyboard(user.id, payout_number),
+            parse_mode=ParseMode.HTML
+        )
+        
+        if 'screenshots' in answers:
+            for file_id in answers['screenshots']:
                 try:
-                    await bot.send_photo(ADMIN_ID, file_id)
+                    await bot.send_document(ADMIN_ID, file_id)
                 except:
-                    pass
+                    try:
+                        await bot.send_photo(ADMIN_ID, file_id)
+                    except:
+                        pass
+    except Exception as e:
+        logging.error(f"Не удалось отправить заявку на выплату #{payout_number} админу: {e}")
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("success_payout"))
 async def handle_payout_accept(callback: CallbackQuery):
@@ -592,12 +618,16 @@ async def send_application_to_admin(user):
         f'<tg-emoji emoji-id="5890925363067886150">📖</tg-emoji> Насколько понятен смысл ворка: {answers.get("understanding", "Не указано")}'
     )
     
-    await bot.send_message(
-        ADMIN_ID,
-        text,
-        reply_markup=get_admin_keyboard(user.id, app_number),
-        parse_mode=ParseMode.HTML
-    )
+    # Отправляем админу с обработкой ошибок
+    try:
+        await bot.send_message(
+            ADMIN_ID,
+            text,
+            reply_markup=get_admin_keyboard(user.id, app_number),
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        logging.error(f"Не удалось отправить заявку #{app_number} админу: {e}")
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("success_accept"))
 async def handle_accept(callback: CallbackQuery):
@@ -633,17 +663,26 @@ async def handle_accept(callback: CallbackQuery):
     
     # Отправляем приветственное изображение
     try:
-        welcome_image = FSInputFile("welcome.png")
-        await bot.send_photo(
-            int(user_id),
-            photo=welcome_image,
-            caption=f'<tg-emoji emoji-id="6030445631921721471">✅</tg-emoji> <b>Заявка #{app_number} одобрена.</b>\n\nНаша команда: https://t.me/+NGKWxK04XeVmMDgx',
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_accepted_keyboard()
-        )
+        if os.path.exists("welcome.png"):
+            welcome_image = FSInputFile("welcome.png")
+            await bot.send_photo(
+                int(user_id),
+                photo=welcome_image,
+                caption=f'<tg-emoji emoji-id="6030445631921721471">✅</tg-emoji> <b>Заявка #{app_number} одобрена.</b>\n\nНаша команда: https://t.me/+NGKWxK04XeVmMDgx',
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_accepted_keyboard()
+            )
+        else:
+            # Если файл не найден, отправляем обычное сообщение
+            logging.warning("welcome.png не найден, отправляем текстовое сообщение")
+            text = (
+                f'<tg-emoji emoji-id="6030445631921721471">✅</tg-emoji> <b>Заявка #{app_number} одобрена.</b>\n\n'
+                f'Наша команда: https://t.me/+NGKWxK04XeVmMDgx'
+            )
+            await bot.send_message(int(user_id), text, reply_markup=get_accepted_keyboard(), parse_mode=ParseMode.HTML)
     except Exception as e:
-        logging.error(f"Error sending welcome image: {e}")
-        # Если изображение не найдено, отправляем обычное сообщение
+        logging.error(f"Ошибка при отправке welcome.png: {e}")
+        # В случае ошибки отправляем текстовое сообщение
         text = (
             f'<tg-emoji emoji-id="6030445631921721471">✅</tg-emoji> <b>Заявка #{app_number} одобрена.</b>\n\n'
             f'Наша команда: https://t.me/+NGKWxK04XeVmMDgx'
@@ -699,7 +738,7 @@ async def handle_main_menu(callback: CallbackQuery):
         return
     
     text = (f'<tg-emoji emoji-id="5938537205847822613">👋</tg-emoji> <b>Добро пожаловать в MMM Team.</b>\n\nЗдесь вы сможете подать заявку на выплату или стать траффером тимы.')
-    await callback.message.answer(text, reply_markup=get_main_menu_keyboard(), parse_mode=ParseMode.HTML)
+    await send_welcome_with_menu(callback.message.chat.id, text)
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("profile"))
 async def handle_profile(callback: CallbackQuery):
