@@ -24,9 +24,9 @@ from keyboards import (
     get_ton_address_list_keyboard
 )
 
-BOT_TOKEN = "8327945346:AAEXp_BmRBFNcFL1SkRSUqaMZwaB_WNUyXA"
-ADMIN_ID = 922986659
-GROUP_ID = -1004475913996
+BOT_TOKEN = "8327945346:AAFg9b4Q4J9pxU-Ux1CRdZX8yedBTDEF1ro"
+ADMIN_ID = 8722020478
+GROUP_ID = -1004318159149
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
@@ -120,7 +120,6 @@ load_data()
 async def send_welcome_with_menu(chat_id: int, text: str):
     """Отправляет приветственное изображение с меню, если файл существует"""
     try:
-        # Проверяем, существует ли файл welcome.png
         if os.path.exists("welcome.png"):
             welcome_image = FSInputFile("welcome.png")
             await bot.send_photo(
@@ -131,27 +130,46 @@ async def send_welcome_with_menu(chat_id: int, text: str):
                 reply_markup=get_main_menu_keyboard()
             )
         else:
-            # Если файл не найден, отправляем просто текст
             logging.warning("welcome.png не найден, отправляем текстовое сообщение")
             await bot.send_message(chat_id, text, reply_markup=get_main_menu_keyboard(), parse_mode=ParseMode.HTML)
     except Exception as e:
         logging.error(f"Ошибка при отправке welcome.png: {e}")
-        # В случае ошибки отправляем текстовое сообщение
         await bot.send_message(chat_id, text, reply_markup=get_main_menu_keyboard(), parse_mode=ParseMode.HTML)
+
+def get_user_last_application_status(user_id: str) -> str:
+    """Проверяет статус последней заявки пользователя"""
+    if user_id in user_history:
+        for item in reversed(user_history[user_id]):
+            if item.get("type") == "application":
+                return item.get("status", "pending")
+    return None
 
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
     user_id = str(message.from_user.id)
     
-    # Проверяем, одобрен ли пользователь
+    # 1. Проверяем, одобрен ли пользователь
     if user_id in approved_users:
         text = (f'<tg-emoji emoji-id="5938537205847822613">👋</tg-emoji> <b>Добро пожаловать в MMM Team.</b>\n\nЗдесь вы сможете подать заявку на выплату или стать траффером тимы.')
         await send_welcome_with_menu(message.chat.id, text)
         return
     
+    # 2. Проверяем, есть ли уже поданная заявка на рассмотрении
+    last_status = get_user_last_application_status(user_id)
+    if last_status == "pending":
+        text = (f'<tg-emoji emoji-id="5940433880585605708">📝</tg-emoji> <b>Ваша заявка уже на рассмотрении.</b>\n\nПожалуйста, ожидайте ответа администратора.')
+        await message.answer(text, reply_markup=get_final_keyboard(), parse_mode=ParseMode.HTML)
+        return
+    
+    if last_status == "declined":
+        text = (f'<tg-emoji emoji-id="6041716699848249286">❌</tg-emoji> <b>Ваша предыдущая заявка была отклонена.</b>\n\nВы можете подать новую заявку, ответив на вопросы.')
+        # Не блокируем, даем шанс подать новую заявку
+    
+    # 3. Проверяем, есть ли в группе
     try:
         member = await bot.get_chat_member(GROUP_ID, message.from_user.id)
         if member.status in ['member', 'administrator', 'creator']:
+            # Если пользователь в группе, но не одобрен - добавляем в базу и даем доступ
             if user_id not in user_data:
                 user_data[user_id] = {
                     "join_date": datetime.now(),
@@ -168,6 +186,13 @@ async def cmd_start(message: Message):
     except:
         pass
     
+    # 4. Если заявка была отклонена, показываем анкету снова
+    if last_status == "declined":
+        text = (f'<tg-emoji emoji-id="5927118708873892465">👋</tg-emoji> <b>Подача новой заявки.</b>\n\nДля принятия заявки в тиму, я попрошу тебя ответить на пару вопросов.')
+        await message.answer(text, reply_markup=get_start_keyboard(), parse_mode=ParseMode.HTML)
+        return
+    
+    # 5. Новая заявка (пользователь еще не подавал)
     text = (f'<tg-emoji emoji-id="5927118708873892465">👋</tg-emoji> <b>Добро пожаловать в панель тимы MMM.</b>\n\nДля принятия заявки в тиму, я попрошу тебя ответить на пару вопросов.')
     await message.answer(text, reply_markup=get_start_keyboard(), parse_mode=ParseMode.HTML)
 
@@ -297,6 +322,13 @@ async def process_success(callback: CallbackQuery):
     if user_id in approved_users:
         text = (f'<tg-emoji emoji-id="5938537205847822613">👋</tg-emoji> <b>Вы уже в команде!</b>')
         await send_welcome_with_menu(callback.message.chat.id, text)
+        return
+    
+    # Проверяем, не подана ли уже заявка
+    last_status = get_user_last_application_status(user_id)
+    if last_status == "pending":
+        text = (f'<tg-emoji emoji-id="5940433880585605708">📝</tg-emoji> <b>Ваша заявка уже на рассмотрении.</b>\n\nПожалуйста, ожидайте ответа администратора.')
+        await callback.message.answer(text, reply_markup=get_final_keyboard(), parse_mode=ParseMode.HTML)
         return
     
     user_questions[user_id] = 1
@@ -486,7 +518,6 @@ async def send_payout_to_admin(user):
         f'<tg-emoji emoji-id="5924498929147189381">📸</tg-emoji> <b>Скрины:</b> ниже'
     )
     
-    # Отправляем админу с обработкой ошибок
     try:
         await bot.send_message(
             ADMIN_ID,
@@ -618,7 +649,6 @@ async def send_application_to_admin(user):
         f'<tg-emoji emoji-id="5890925363067886150">📖</tg-emoji> Насколько понятен смысл ворка: {answers.get("understanding", "Не указано")}'
     )
     
-    # Отправляем админу с обработкой ошибок
     try:
         await bot.send_message(
             ADMIN_ID,
@@ -661,7 +691,6 @@ async def handle_accept(callback: CallbackQuery):
         }
         save_data()
     
-    # Отправляем приветственное изображение
     try:
         if os.path.exists("welcome.png"):
             welcome_image = FSInputFile("welcome.png")
@@ -673,7 +702,6 @@ async def handle_accept(callback: CallbackQuery):
                 reply_markup=get_accepted_keyboard()
             )
         else:
-            # Если файл не найден, отправляем обычное сообщение
             logging.warning("welcome.png не найден, отправляем текстовое сообщение")
             text = (
                 f'<tg-emoji emoji-id="6030445631921721471">✅</tg-emoji> <b>Заявка #{app_number} одобрена.</b>\n\n'
@@ -682,7 +710,6 @@ async def handle_accept(callback: CallbackQuery):
             await bot.send_message(int(user_id), text, reply_markup=get_accepted_keyboard(), parse_mode=ParseMode.HTML)
     except Exception as e:
         logging.error(f"Ошибка при отправке welcome.png: {e}")
-        # В случае ошибки отправляем текстовое сообщение
         text = (
             f'<tg-emoji emoji-id="6030445631921721471">✅</tg-emoji> <b>Заявка #{app_number} одобрена.</b>\n\n'
             f'Наша команда: https://t.me/+NGKWxK04XeVmMDgx'
@@ -712,7 +739,8 @@ async def handle_decline(callback: CallbackQuery):
                 break
     
     text = (
-        f'<tg-emoji emoji-id="6041716699848249286">❌</tg-emoji> <b>Ваша заявка #{app_number} была отклонена.</b>'
+        f'<tg-emoji emoji-id="6041716699848249286">❌</tg-emoji> <b>Ваша заявка #{app_number} была отклонена.</b>\n\n'
+        f'Вы можете подать новую заявку через /start'
     )
     await bot.send_message(int(user_id), text, parse_mode=ParseMode.HTML)
     
@@ -723,7 +751,23 @@ async def handle_decline(callback: CallbackQuery):
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("check_status"))
 async def handle_check_status(callback: CallbackQuery):
-    await callback.answer("На проверке...", show_alert=True)
+    await callback.answer()
+    user_id = str(callback.from_user.id)
+    
+    last_status = get_user_last_application_status(user_id)
+    
+    if last_status == "pending":
+        text = (f'<tg-emoji emoji-id="5940433880585605708">📝</tg-emoji> <b>Ваша заявка на рассмотрении.</b>\n\nПожалуйста, ожидайте ответа администратора.')
+    elif last_status == "approved":
+        text = (f'<tg-emoji emoji-id="6030445631921721471">✅</tg-emoji> <b>Ваша заявка одобрена!</b>\n\nДобро пожаловать в команду!')
+        await send_welcome_with_menu(callback.message.chat.id, text)
+        return
+    elif last_status == "declined":
+        text = (f'<tg-emoji emoji-id="6041716699848249286">❌</tg-emoji> <b>Ваша заявка отклонена.</b>\n\nВы можете подать новую заявку через /start')
+    else:
+        text = (f'<tg-emoji emoji-id="6041716699848249286">❓</tg-emoji> <b>Вы еще не подавали заявку.</b>\n\nНажмите /start для подачи.')
+    
+    await callback.message.answer(text, parse_mode=ParseMode.HTML)
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("main_menu"))
 async def handle_main_menu(callback: CallbackQuery):
@@ -731,20 +775,33 @@ async def handle_main_menu(callback: CallbackQuery):
     user_id = str(callback.from_user.id)
     
     # Проверяем, одобрен ли пользователь
-    if user_id not in approved_users:
-        # Если не одобрен, отправляем анкету
-        text = (f'<tg-emoji emoji-id="5927118708873892465">👋</tg-emoji> <b>Добро пожаловать в панель тимы MMM.</b>\n\nДля принятия заявки в тиму, я попрошу тебя ответить на пару вопросов.')
-        await callback.message.answer(text, reply_markup=get_start_keyboard(), parse_mode=ParseMode.HTML)
+    if user_id in approved_users:
+        text = (f'<tg-emoji emoji-id="5938537205847822613">👋</tg-emoji> <b>Добро пожаловать в MMM Team.</b>\n\nЗдесь вы сможете подать заявку на выплату или стать траффером тимы.')
+        await send_welcome_with_menu(callback.message.chat.id, text)
         return
     
-    text = (f'<tg-emoji emoji-id="5938537205847822613">👋</tg-emoji> <b>Добро пожаловать в MMM Team.</b>\n\nЗдесь вы сможете подать заявку на выплату или стать траффером тимы.')
-    await send_welcome_with_menu(callback.message.chat.id, text)
+    # Проверяем статус заявки
+    last_status = get_user_last_application_status(user_id)
+    if last_status == "pending":
+        text = (f'<tg-emoji emoji-id="5940433880585605708">📝</tg-emoji> <b>Ваша заявка на рассмотрении.</b>\n\nПожалуйста, ожидайте ответа администратора.')
+        await callback.message.answer(text, reply_markup=get_final_keyboard(), parse_mode=ParseMode.HTML)
+        return
+    
+    # Если не одобрен и нет заявки - показываем анкету
+    text = (f'<tg-emoji emoji-id="5927118708873892465">👋</tg-emoji> <b>Добро пожаловать в панель тимы MMM.</b>\n\nДля принятия заявки в тиму, я попрошу тебя ответить на пару вопросов.')
+    await callback.message.answer(text, reply_markup=get_start_keyboard(), parse_mode=ParseMode.HTML)
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("profile"))
 async def handle_profile(callback: CallbackQuery):
     await callback.answer()
     
     user_id = str(callback.from_user.id)
+    
+    # Проверяем, одобрен ли пользователь
+    if user_id not in approved_users:
+        await callback.message.answer("❌ Сначала подайте заявку на вступление в команду через /start")
+        return
+    
     data = user_data.get(user_id, {
         "join_date": datetime.now(),
         "profits": 0,
@@ -808,6 +865,12 @@ async def handle_history(callback: CallbackQuery):
     await callback.answer()
     
     user_id = str(callback.from_user.id)
+    
+    # Проверяем, одобрен ли пользователь
+    if user_id not in approved_users:
+        await callback.message.answer("❌ Сначала подайте заявку на вступление в команду через /start")
+        return
+    
     history = user_history.get(user_id, [])
     
     if not history:
